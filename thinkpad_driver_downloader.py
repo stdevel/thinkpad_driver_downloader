@@ -23,28 +23,30 @@ __version__ = "0.6.0"
 """
 Program version
 """
-OS_OPTIONS = [
-    "dos",      # MS-DOS
-    "win3x",    # Windows 3.x
-    "os2",      # OS/2
-    "winnt",    # Windows NT
-    "win95",    # Windows 95
-    "win98",    # Windows 98
-    "winme",    # Windows ME
-    "win2k",    # Windows 2000
-    "xp",       # Windows XP (32-bit)
-    "xp_64",    # Windows XP (64-bit)
-    "7_32",     # Windows 7 (32-bit)
-    "7_64",     # Windows 7 (64-bit)
-    "8_32",     # Windows 8 (32-bit)
-    "8_64",     # Windows 8 (64-bit)
-]
+OS_OPTIONS = {
+    "dos": "MS-DOS",
+    "win3x": "Windows 3.x",
+    "os2": "OS/2",
+    "winnt": "Windows NT",
+    "win95": "Windows 95",
+    "win98": "Windows 98",
+    "winme": "Windows ME",
+    "win2k": "Windows 2000",
+    "xp": "Windows XP (32-bit)", 
+    "xp_64": "Windows XP (64-bit)",
+    "7_32": "Windows 7 (32-bit)",
+    "7_64": "Windows 7 (64-bit)",
+    "8_32": "Windows 8 (32-bit)",
+    "8_64": "Windows 8 (64-bit)",
+    "independent": "OS Independent"
+}
 """
 str: Operating system options
 """
 DRIVER_GROUPS = {
     "audio": "Audio",
     "bios": "BIOS",
+    "bios_uefi": "BIOS/UEFI",
     "bluetooth_modem": "Bluetooth and Modem",
     "camera_cardreader": "Camera and Card Reader",
     "chipset": "Chipset",
@@ -101,6 +103,24 @@ def download_file(url, overwrite=False):
         sys.exit(1)
 
 
+def is_blocklisted(link, blocklist):
+    """
+    Returns whether links is excluded by the blocklist
+    """
+    LOGGER.debug("***")
+    LOGGER.debug(blocklist)
+    _filename = os.path.basename(link)
+    for entry in blocklist:
+        LOGGER.debug(
+            "Checking whether file '%s' is blocklisted by '%s'",
+            _filename, blocklist
+        )
+        if entry in _filename:
+            LOGGER.info("File '%s' is blocklisted!", _filename)
+            return True
+    return False
+
+
 def parse_site(options):
     """
     Parses the particular model site
@@ -124,12 +144,40 @@ def parse_site(options):
         if options.dl_all:
             _links = _soup.find_all('a')
         else:
+            # set groups
+            if options.dl_group:
+                _groups = [''.join(x) for x in list(options.dl_group)]
+            else:
+                _groups = list(DRIVER_GROUPS.keys())
+
+            # iterate through groups
+            _return = []
+            for _group in _groups:
+                LOGGER.debug(
+                    "Scanning %s drivers in %s group",
+                    OS_OPTIONS[options.dl_os], _group
+                )
+                _links = _soup.find_all('div', id=DRIVER_GROUPS[_group])
+                for _link in _links:
+                    table = _link.find("table")
+                    for row in table.findAll("tr"):
+                        cols = [ e.stripped_strings.next() for e in row.find_all('td') if len(e.text)]
+                        # data.append([e for e in cols if e])
+                        print([e for e in cols if e])
             # TODO: implement
             # check for OS
             # check for group
-            _links = _soup.find_all('a')
+            # _links = _soup.find_all('a')
+            
+            sys.exit(1)
 
         links = [x['href'] for x in _links if x['href']]
+
+        # exclude filenames
+        if options.dl_exclude:
+            _blocklist = [''.join(x) for x in list(options.dl_exclude)]
+            links = [x for x in links if not is_blocklisted(x, _blocklist)]
+
         return links
     except requests.exceptions.MissingSchema as err:
         LOGGER.error(
@@ -199,9 +247,8 @@ def parse_options(args=None):
         dest="dl_group",
         metavar="GROUP",
         nargs="*",
-        choices=DRIVER_GROUPS,
-        default=[],
-        action="store",
+        choices=DRIVER_GROUPS.keys(),
+        action="append",
         help="Groups to download files from (default: all)"
     )
     # -a / --all
@@ -212,6 +259,16 @@ def parse_options(args=None):
         action="store_true",
         default=False,
         help="Simply download _all_ the drivers (default: no)"
+    )
+    # -x / --exclude
+    dl_opts.add_argument(
+        "-x",
+        "--exclude",
+        dest="dl_exclude",
+        metavar="FILENAME",
+        nargs="*",
+        action="append",
+        help="Filenames to exclude (used as wildcard)"
     )
     # -f / --force
     dl_opts.add_argument(
